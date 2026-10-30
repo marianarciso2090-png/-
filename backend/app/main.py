@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import PlainTextResponse
@@ -66,6 +67,15 @@ def current_user(username: str = Depends(require_admin)) -> dict[str, str]:
     return {"username": username}
 
 
+@app.get("/integrations")
+def integrations(_: str = Depends(require_admin)) -> dict[str, dict[str, bool]]:
+    """Configuration readiness only; no provider requests or credentials are returned."""
+    return {
+        "ifind": {"configured": bool(settings.secret_value(settings.ifind_mcp_api_key))},
+        "deepseek": {"configured": bool(settings.secret_value(settings.deepseek_api_key))},
+    }
+
+
 @app.post("/researches", response_model=ResearchSummary, status_code=status.HTTP_202_ACCEPTED)
 def create_research(
     payload: ResearchCreate,
@@ -128,9 +138,9 @@ def download_markdown(research_id: str, db: Session = Depends(get_db), _: str = 
     run = _get_research_or_404(research_id, db)
     if not run.report_markdown:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告尚未生成")
-    filename = f"research-{run.symbol}-{research_id[:8]}.md".replace('"', "")
+    filename = f"research-{run.symbol}-{research_id[:8]}.md"
     return PlainTextResponse(
         run.report_markdown,
         media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f"attachment; filename=\"research-{research_id[:8]}.md\"; filename*=UTF-8''{quote(filename, safe='')}"},
     )

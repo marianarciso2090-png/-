@@ -1,7 +1,14 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
-import { ApiError, api, type Research, type ResearchDetail } from "./api";
+import {
+  ApiError,
+  api,
+  SESSION_EXPIRED_EVENT,
+  type Integrations,
+  type Research,
+  type ResearchDetail,
+} from "./api";
 import "./styles.css";
 
 const active = new Set(["queued", "collecting", "analysing", "reviewing"]);
@@ -208,9 +215,15 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
 function ResearchForm({
   onCreated,
   retryTarget,
+  integrations,
+  integrationError,
+  onRefresh,
 }: {
   onCreated: (run: Research) => void;
   retryTarget: Research | null;
+  integrations: Integrations | null;
+  integrationError: boolean;
+  onRefresh: () => void;
 }) {
   const [symbol, setSymbol] = useState("");
   const [asOf, setAsOf] = useState("");
@@ -275,7 +288,15 @@ function ResearchForm({
           />
           <small>留空使用最新可得数据</small>
         </label>
-        <button className="primary" disabled={busy || !symbol.trim()}>
+        <button
+          className="primary"
+          disabled={
+            busy ||
+            !symbol.trim() ||
+            !integrations?.ifind.configured ||
+            !integrations?.deepseek.configured
+          }
+        >
           {busy ? "正在创建…" : "开始研究"}
           <Icon name="arrow" />
         </button>
@@ -286,8 +307,29 @@ function ResearchForm({
         )}
       </form>
       <div className="form-foot">
-        <span className="live-dot" />
-        iFinD 数据支持<span className="foot-divider">/</span>DeepSeek 深度分析
+        <span
+          className={`live-dot ${integrations?.ifind.configured && integrations?.deepseek.configured ? "" : "pending-dot"}`}
+        />
+        {integrationError ? (
+          <>
+            <span>暂时无法读取服务配置</span>
+            <button className="text-button" onClick={onRefresh}>
+              重试
+            </button>
+          </>
+        ) : integrations ? (
+          <>
+            iFinD {integrations.ifind.configured ? "已配置" : "待配置"}
+            <span className="foot-divider">/</span>
+            DeepSeek {integrations.deepseek.configured ? "已配置" : "待配置"}
+            {(!integrations.ifind.configured ||
+              !integrations.deepseek.configured) && (
+              <span>请先在服务端配置密钥</span>
+            )}
+          </>
+        ) : (
+          "正在读取服务配置…"
+        )}
         <span className="auto-note">自动采集 · 生成分析 · 审阅存档</span>
       </div>
     </section>
@@ -573,6 +615,25 @@ function Dashboard({
   const [refreshKey, setRefreshKey] = useState(0);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [retryTarget, setRetryTarget] = useState<Research | null>(null);
+  const [integrations, setIntegrations] = useState<Integrations | null>(null);
+  const [integrationError, setIntegrationError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .integrations()
+      .then((data) => {
+        if (!cancelled) {
+          setIntegrations(data);
+          setIntegrationError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIntegrationError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
   const inProgress = runs.some((run) => active.has(run.status));
@@ -759,7 +820,13 @@ function Dashboard({
               <Icon name="layers" size={23} />
             </div>
           </div>
-          <ResearchForm onCreated={created} retryTarget={retryTarget} />
+          <ResearchForm
+            onCreated={created}
+            retryTarget={retryTarget}
+            integrations={integrations}
+            integrationError={integrationError}
+            onRefresh={() => setRefreshKey((v) => v + 1)}
+          />
           {error && (
             <div className="error-banner" role="alert">
               {error}
@@ -908,6 +975,11 @@ function App() {
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  useEffect(() => {
+    const expire = () => setUsername(null);
+    window.addEventListener(SESSION_EXPIRED_EVENT, expire);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
+  }, []);
   async function checkSession() {
     setError("");
     setLoading(true);

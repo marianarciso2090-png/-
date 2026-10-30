@@ -95,6 +95,9 @@ a svg {
   background: #6d9b75;
   flex-shrink: 0;
 }
+.live-dot.pending-dot {
+  background: #b09a65;
+}
 .primary,
 .secondary {
   display: inline-flex;
