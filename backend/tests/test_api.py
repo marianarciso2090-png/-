@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.db as db_module
 import app.main as main_module
-from app.models import CredentialSession, ResearchRun
+from app.models import CredentialSession, ResearchRun, EvidenceSnapshot
 from app.core.security import COOKIE_NAME
 
 
@@ -68,9 +68,14 @@ def test_report_isolation_restore_and_chinese_download(database):
     with db_module.SessionLocal() as db:
         run = db.get(ResearchRun, run_id)
         run.report_markdown = "# 中文报告"
+        db.add(EvidenceSnapshot(research_id=run_id, source_server="stock", tool_name="get_stock_info",
+            request_params={"query": "中文资料"}, response_sha256="hash", raw_payload={"data": {"answer": "中文可读证据正文"}}, excerpt="旧的接口摘要"))
         db.add(ResearchRun(symbol="legacy", owner_id=None))
         db.commit()
     assert len(a.get("/researches").json()) == 1
+    evidence = a.get(f"/researches/{run_id}").json()["evidence"][0]
+    assert evidence["readable"]["markdown"] == "中文可读证据正文"
+    assert "raw_payload" not in evidence
     assert b.get("/researches").json() == []
     assert b.get(f"/researches/{run_id}").status_code == 404
     assert b.get(f"/researches/{run_id}/markdown").status_code == 404

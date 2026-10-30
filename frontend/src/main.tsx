@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
+import { EvidenceContent } from "./components/EvidenceContent";
 import {
   ApiError,
   api,
@@ -401,13 +402,15 @@ function Evidence({
     }
   }, [targetId]);
   const filtered = items.filter((item) =>
-    `${toolNames[item.tool_name] || item.tool_name} ${item.id} ${item.excerpt}`
+    `${toolNames[item.tool_name.replace(/^failed:/, "")] || item.tool_name} ${item.id} ${item.readable?.markdown || item.excerpt}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
   return (
     <div className="evidence-view">
-      <p className="subtle">每条证据保留采集时间与查询口径，便于交叉核验。</p>
+      <p className="subtle">
+        展开资料，查看数据正文、指标口径和采集时间。编号与原始摘要可在核验详情中查阅。
+      </p>
       <div className="input-wrap evidence-search">
         <Icon name="search" />
         <input
@@ -428,26 +431,19 @@ function Evidence({
               {String(items.indexOf(item) + 1).padStart(2, "0")}
             </span>
             <span>
-              <b>{toolNames[item.tool_name] || item.tool_name}</b>
+              <b>
+                {toolNames[item.tool_name.replace(/^failed:/, "")] ||
+                  item.tool_name}
+                {item.readable?.failed ? " · 未采集成功" : ""}
+              </b>
               <small>
                 {item.source_server === "derived" ? "财务计算" : "同花顺 iFinD"}{" "}
                 · {date(item.captured_at)}
               </small>
             </span>
-            <span className="evidence-expand">展开 +</span>
+            <span className="evidence-expand" aria-hidden="true" />
           </summary>
-          <div className="evidence-body">
-            <code>证据编号：{item.id}</code>
-            <p>
-              查询口径：
-              {String(
-                item.request_params.query ||
-                  JSON.stringify(item.request_params),
-              )}
-            </p>
-            <pre>{item.excerpt}</pre>
-            <small>SHA-256：{item.response_sha256}</small>
-          </div>
+          <EvidenceContent item={item} />
         </details>
       ))}
       {!filtered.length && (

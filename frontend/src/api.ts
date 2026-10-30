@@ -9,6 +9,7 @@ export interface Evidence {
   response_sha256: string;
   excerpt: string;
   captured_at: string | null;
+  readable?: { markdown: string; notices: string[]; failed: boolean };
 }
 
 export interface Research {

@@ -46,6 +46,12 @@ class ResearchSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ReadableEvidence(BaseModel):
+    markdown: str
+    notices: list[str]
+    failed: bool
+
+
 class EvidenceOut(BaseModel):
     id: str
     source_server: str
@@ -54,6 +60,7 @@ class EvidenceOut(BaseModel):
     response_sha256: str
     excerpt: str
     captured_at: datetime | None
+    readable: ReadableEvidence
 
     model_config = {"from_attributes": True}
 

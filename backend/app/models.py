@@ -55,6 +55,11 @@ class EvidenceSnapshot(Base):
 
     research: Mapped[ResearchRun] = relationship(back_populates="evidence")
 
+    @property
+    def readable(self) -> dict:
+        from app.services.evidence import readable_evidence
+        return readable_evidence(self.raw_payload)
+
 
 class CredentialSession(Base):
     __tablename__ = "credential_sessions"
