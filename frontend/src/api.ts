@@ -55,11 +55,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   } catch {
     throw new ApiError("连接中断，请检查网络或研究服务是否启动。", 0);
   }
-  if (
-    response.status === 401 &&
-    path !== "/auth/login" &&
-    path !== "/auth/me"
-  ) {
+  if (response.status === 401 && path !== "/session") {
     window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
   }
   if (!response.ok) {
@@ -80,13 +76,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   integrations: () => request<Integrations>("/integrations"),
-  me: () => request<{ username: string }>("/auth/me"),
-  login: (username: string, password: string) =>
-    request<void>("/auth/login", {
+  session: () => request<{ connected: boolean }>("/session"),
+  connect: (ifindKey: string, deepseekKey: string) =>
+    request<void>("/session", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({
+        ifind_mcp_api_key: ifindKey,
+        deepseek_api_key: deepseekKey,
+      }),
     }),
-  logout: () => request<void>("/auth/logout", { method: "POST" }),
+  disconnect: () => request<void>("/session", { method: "DELETE" }),
   listResearches: (symbol?: string, asOf?: string) => {
     const query = new URLSearchParams();
     if (symbol) query.set("symbol", symbol);

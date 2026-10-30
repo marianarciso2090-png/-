@@ -4,14 +4,18 @@ from sqlalchemy.pool import StaticPool
 import app.db as db_module
 from app.db import Base
 from app.models import ResearchRun, ResearchStatus
+from app.models import CredentialSession
+from app.core.config import get_settings
+from app.core.security import create_session
+from fastapi import Response
 from app.schemas import ReportClaim, ReportDraft, ResearchPlan
 from app.services.ifind import CollectedPayload
 import app.services.research as research_module
 
 
 class FakeIFindClient:
-    def __init__(self, *_args, **_kwargs) -> None:
-        pass
+    def __init__(self, settings, *_args, **_kwargs) -> None:
+        assert settings.ifind_mcp_api_key.get_secret_value() == "submitted-ifind"
 
     def call(self, server: str, tool: str, params: dict) -> CollectedPayload:
         payload = {"tool": tool, "query": params["query"]}
@@ -27,8 +31,8 @@ class FakeIFindClient:
 
 
 class FakeDeepSeekClient:
-    def __init__(self, *_args, **_kwargs) -> None:
-        pass
+    def __init__(self, settings, *_args, **_kwargs) -> None:
+        assert settings.deepseek_api_key.get_secret_value() == "submitted-deepseek"
 
     def create_plan(self, *_args, **_kwargs) -> ResearchPlan:
         return ResearchPlan(focus=["业务护城河", "财务质量", "估值与风险"])
@@ -56,12 +60,13 @@ def test_full_research_pipeline_with_mocked_providers(monkeypatch) -> None:
     Base.metadata.create_all(engine)
     monkeypatch.setattr(research_module, "IFindClient", FakeIFindClient)
     monkeypatch.setattr(research_module, "DeepSeekClient", FakeDeepSeekClient)
-    monkeypatch.setattr(research_module, "_redis_client", lambda: None)
 
     db = db_module.SessionLocal()
-    run = ResearchRun(symbol="600519", status=ResearchStatus.QUEUED)
+    create_session(Response(), db, get_settings(), "submitted-ifind", "submitted-deepseek", None)
+    credential = db.scalar(select(CredentialSession))
+    run = ResearchRun(symbol="600519", status=ResearchStatus.QUEUED, owner_id=credential.owner_id)
     db.add(run); db.commit(); db.refresh(run)
-    research_module.run_research(run.id)
+    research_module.run_research(run.id, credential.id)
     db.expire_all()
     result = db.scalar(select(ResearchRun).where(ResearchRun.id == run.id))
 

@@ -128,9 +128,10 @@ function Brand() {
   );
 }
 
-function Login({ onSuccess }: { onSuccess: () => void }) {
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("");
+function KeySetup({ onSuccess }: { onSuccess: () => void }) {
+  const [ifindKey, setIfindKey] = useState("");
+  const [deepseekKey, setDeepseekKey] = useState("");
+  const [visible, setVisible] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
@@ -138,10 +139,12 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
     setBusy(true);
     setError("");
     try {
-      await api.login(username, password);
+      await api.connect(ifindKey.trim(), deepseekKey.trim());
+      setIfindKey("");
+      setDeepseekKey("");
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "登录失败，请稍后重试");
+      setError(e instanceof Error ? e.message : "接入失败，请稍后重试");
     } finally {
       setBusy(false);
     }
@@ -174,37 +177,81 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
       </section>
       <section className="login-area">
         <form className="login-card" onSubmit={submit}>
-          <span className="eyebrow">YOUR RESEARCH SPACE</span>
-          <h2>进入研究工作台</h2>
-          <p className="subtle">登录你的专属空间，开始一次深入研究。</p>
+          <span className="eyebrow">BRING YOUR OWN KEYS</span>
+          <h2>接入你的研究服务</h2>
+          <p className="subtle">
+            填入你自己的两项密钥，即可进入工作台。查询和模型用量由对应服务账户承担。
+          </p>
           <label>
-            用户名
+            同花顺 iFinD MCP 密钥
             <input
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type={visible ? "text" : "password"}
+              autoComplete="off"
+              spellCheck={false}
+              autoCapitalize="none"
+              placeholder="输入 iFinD MCP 密钥"
+              maxLength={2048}
+              value={ifindKey}
+              onChange={(e) => setIfindKey(e.target.value)}
               required
             />
           </label>
+          <a
+            className="key-help"
+            href="https://mcp.51ifind.com/#/profile"
+            target="_blank"
+            rel="noreferrer"
+          >
+            获取 iFinD MCP 密钥 ↗
+          </a>
           <label>
-            密码
+            DeepSeek API Key
             <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              type={visible ? "text" : "password"}
+              autoComplete="off"
+              spellCheck={false}
+              autoCapitalize="none"
+              placeholder="输入 DeepSeek API Key"
+              maxLength={2048}
+              value={deepseekKey}
+              onChange={(e) => setDeepseekKey(e.target.value)}
               required
             />
           </label>
+          <div className="key-options">
+            <a
+              className="key-help"
+              href="https://platform.deepseek.com/api_keys"
+              target="_blank"
+              rel="noreferrer"
+            >
+              获取 DeepSeek API Key ↗
+            </a>
+            <button
+              type="button"
+              className="text-button"
+              aria-pressed={visible}
+              onClick={() => setVisible((v) => !v)}
+            >
+              {visible ? "隐藏密钥" : "显示密钥"}
+            </button>
+          </div>
           {error && (
             <p className="error" role="alert">
               {error}
             </p>
           )}
-          <button className="primary" disabled={busy}>
-            {busy ? "正在登录…" : "登录工作台"}
+          <button
+            className="primary"
+            disabled={busy || !ifindKey.trim() || !deepseekKey.trim()}
+          >
+            {busy ? "正在接入…" : "进入研究工作台"}
             <Icon name="arrow" />
           </button>
+          <div className="key-privacy">
+            密钥仅用于当前服务会话，在后端加密暂存，最长 12
+            小时。浏览器不保存密钥明文，退出后清除会话。点击“开始研究”才会调用服务。
+          </div>
           <p className="login-foot">仅供研究参考，不构成投资建议</p>
         </form>
       </section>
@@ -323,9 +370,7 @@ function ResearchForm({
             <span className="foot-divider">/</span>
             DeepSeek {integrations.deepseek.configured ? "已配置" : "待配置"}
             {(!integrations.ifind.configured ||
-              !integrations.deepseek.configured) && (
-              <span>请先在服务端配置密钥</span>
-            )}
+              !integrations.deepseek.configured) && <span>请重新填写密钥</span>}
           </>
         ) : (
           "正在读取服务配置…"
@@ -706,10 +751,11 @@ function Dashboard({
   async function logout() {
     setLogoutBusy(true);
     try {
-      await api.logout();
+      await api.disconnect();
       onLogout();
-    } catch {
-      setError("退出失败，请稍后重试。");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) onLogout();
+      else setError("断开失败，请稍后重试。");
     } finally {
       setLogoutBusy(false);
     }
@@ -762,13 +808,14 @@ function Dashboard({
               <small>个人研究空间</small>
             </div>
             <button
-              className="icon-button"
-              title="退出登录"
-              aria-label="退出登录"
+              className="key-switch"
+              title="断开服务并更换密钥"
+              aria-label="断开服务并更换密钥"
               disabled={logoutBusy}
               onClick={() => void logout()}
             >
-              <Icon name="logout" size={17} />
+              <Icon name="logout" size={14} />
+              更换密钥
             </button>
           </div>
         </div>
@@ -984,7 +1031,8 @@ function App() {
     setError("");
     setLoading(true);
     try {
-      setUsername((await api.me()).username);
+      await api.session();
+      setUsername("密钥已接入");
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 401))
         setError("无法连接研究服务，请检查服务是否启动。");
@@ -1016,7 +1064,7 @@ function App() {
   return username ? (
     <Dashboard username={username} onLogout={() => setUsername(null)} />
   ) : (
-    <Login onSuccess={() => void checkSession()} />
+    <KeySetup onSuccess={() => void checkSession()} />
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);

@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -30,3 +30,9 @@ def create_schema() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    # Preserve old reports, but do not expose records without a credential owner.
+    with engine.begin() as connection:
+        columns = {column["name"] for column in inspect(connection).get_columns("research_runs")}
+        if "owner_id" not in columns:
+            connection.execute(text("ALTER TABLE research_runs ADD COLUMN owner_id VARCHAR(64)"))
+            connection.execute(text("CREATE INDEX ix_research_runs_owner_id ON research_runs (owner_id)"))

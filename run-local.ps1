@@ -40,13 +40,6 @@ finally {
     Pop-Location
 }
 
-if (-not $env:DEEPSEEK_API_KEY) {
-    throw 'DEEPSEEK_API_KEY is missing. Set it locally and rerun. Do not paste it into chat.'
-}
-if (-not $env:IFIND_MCP_API_KEY) {
-    throw 'IFIND_MCP_API_KEY is missing. Set it locally and rerun. Do not paste it into chat.'
-}
-
 $env:APP_ENV = 'local'
 $env:DATABASE_URL = 'sqlite:///./local_research.db'
 function New-RandomSecret([int]$Length) {
@@ -57,13 +50,7 @@ function New-RandomSecret([int]$Length) {
     return [Convert]::ToBase64String($bytes)
 }
 $env:SESSION_SECRET = New-RandomSecret 48
-if (-not $env:ADMIN_PASSWORD) {
-    $env:ADMIN_PASSWORD = New-RandomSecret 18
-    Write-Host 'Login username: admin'
-    Write-Host "Login password for this run: $env:ADMIN_PASSWORD"
-} else {
-    Write-Host 'Login username: admin (password from ADMIN_PASSWORD environment variable)'
-}
+Write-Host 'Enter your own iFinD MCP and DeepSeek API keys on the web page.'
 
 Write-Host "Open in browser: http://127.0.0.1:$Port"
 Write-Host 'Press Ctrl+C to stop. Reports are saved in backend/local_research.db.'

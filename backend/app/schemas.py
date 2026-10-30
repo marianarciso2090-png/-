@@ -1,14 +1,22 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from app.models import ResearchStatus
 
 
-class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=512)
+class KeyConnectRequest(BaseModel):
+    ifind_mcp_api_key: SecretStr = Field(min_length=1, max_length=2048)
+    deepseek_api_key: SecretStr = Field(min_length=1, max_length=2048)
+
+    @field_validator("ifind_mcp_api_key", "deepseek_api_key")
+    @classmethod
+    def clean_key(cls, value: SecretStr) -> SecretStr:
+        key = value.get_secret_value().strip()
+        if not key or any(char.isspace() or ord(char) < 33 or ord(char) > 126 for char in key):
+            raise ValueError("密钥不能为空或包含空白字符")
+        return SecretStr(key)
 
 
 class ResearchCreate(BaseModel):

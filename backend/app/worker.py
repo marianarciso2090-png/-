@@ -8,7 +8,7 @@ celery_app.conf.update(task_track_started=True, task_serializer="json", result_s
 
 
 @celery_app.task(name="stock_research.run_research")
-def run_research_task(research_id: str) -> None:
+def run_research_task(research_id: str, session_id: str) -> None:
     from app.services.research import run_research
 
-    run_research(research_id)
+    run_research(research_id, session_id)

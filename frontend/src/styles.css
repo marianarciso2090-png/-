@@ -1213,6 +1213,44 @@ a svg {
   text-align: center;
   margin-top: 8px;
 }
+.key-help {
+  font-size: 11px;
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  margin-top: -9px;
+}
+.key-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 5px;
+  background: #edf2e8;
+  color: var(--green);
+  font-size: 10px;
+  padding: 8px 5px;
+  white-space: nowrap;
+}
+.key-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.key-options .key-help {
+  margin: 0;
+}
+.key-options .text-button {
+  font-size: 11px;
+}
+.key-privacy {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #788570;
+  padding: 12px 14px;
+  background: #eef2e8;
+  border-radius: 7px;
+}
 .loading {
   min-height: 100vh;
   display: flex;

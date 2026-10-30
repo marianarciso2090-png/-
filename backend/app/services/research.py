@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Iterable
+from pydantic import SecretStr
 
-from redis import Redis
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db import SessionLocal
-from app.models import EvidenceSnapshot, ResearchRun, ResearchStatus
+from app.models import CredentialSession, EvidenceSnapshot, ResearchRun, ResearchStatus
+from app.core.security import session_keys
 from app.schemas import ReportClaim, ReportDraft, ResearchPlan
 from app.services.deepseek import DeepSeekClient, DeepSeekError
 from app.services.analytics import calculate_financial_indicators
@@ -21,15 +22,6 @@ from app.services.ifind import (
     payload_hash,
 )
 from app.services.renderer import render_markdown
-
-
-def _redis_client() -> Redis | None:
-    if get_settings().app_env == "local":
-        return None
-    try:
-        return Redis.from_url(get_settings().redis_url, decode_responses=True, socket_connect_timeout=2)
-    except Exception:
-        return None
 
 
 def _set_status(run: ResearchRun, status: ResearchStatus) -> None:
@@ -178,7 +170,7 @@ def _guard_draft(draft: ReportDraft, valid_ids: set[str], fallback_id: str) -> R
     return draft
 
 
-def run_research(research_id: str) -> None:
+def run_research(research_id: str, session_id: str) -> None:
     """Run a complete job. This function is intentionally independent of Celery for testability."""
     settings = get_settings()
     db = SessionLocal()
@@ -188,6 +180,15 @@ def run_research(research_id: str) -> None:
         run = db.scalar(select(ResearchRun).where(ResearchRun.id == research_id))
         if not run:
             return
+        credential_session = db.get(CredentialSession, session_id)
+        if credential_session is None or credential_session.owner_id != run.owner_id:
+            raise IFindError("密钥会话已失效，请重新接入后重试")
+        try:
+            keys = session_keys(credential_session, settings)
+        except ValueError:
+            raise IFindError("密钥会话已过期，请重新接入后重试") from None
+        # Always override both keys; never fall back to this computer's environment.
+        settings = settings.model_copy(update={key: SecretStr(value) for key, value in keys.items()})
         _set_status(run, ResearchStatus.COLLECTING)
         db.commit()
 
@@ -200,7 +201,8 @@ def run_research(research_id: str) -> None:
         run.plan_json = plan.model_dump(mode="json")
         db.commit()
 
-        client = IFindClient(settings, _redis_client())
+        # Avoid sharing provider data between different users' credentials.
+        client = IFindClient(settings, None)
         successful: list[EvidenceSnapshot] = []
         failures: list[EvidenceSnapshot] = []
         for server, tool, params in default_collection_specs(

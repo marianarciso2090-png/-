@@ -6,19 +6,21 @@
 
 ## 在自己的 Windows 电脑上试用（无需 Docker）
 
-这台电脑已有 Python 和 Node.js。先在 PowerShell 里确认本机已设置 `DEEPSEEK_API_KEY` 和 `IFIND_MCP_API_KEY` 两个环境变量，随后在项目根目录运行：
+安装 Python 和 Node.js 后，在项目根目录运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run-local.ps1
 ```
 
-脚本首次运行会建立项目专用 Python 环境、安装依赖、构建网页，然后只监听 `127.0.0.1:8765`。在浏览器打开 `http://127.0.0.1:8765`；管理员账号为 `admin`，一次性密码显示在启动终端。保持终端打开以运行服务，按 Ctrl+C 停止。
+脚本首次运行会建立项目专用 Python 环境、安装依赖、构建网页，然后只监听 `127.0.0.1:8765`。在浏览器打开 `http://127.0.0.1:8765`，填写你自己的 iFinD MCP 密钥和 DeepSeek API Key 后进入工作台。无需管理员账号、密码或提供方密钥环境变量。保持终端打开以运行服务，按 Ctrl+C 停止。
 
-本地报告和证据存放在 `backend/local_research.db`；该文件已被 Git 忽略。每次启动会生成新的登录密码，已有报告不会丢失。如需固定密码，可在运行脚本前设置 `ADMIN_PASSWORD` 环境变量。API 密钥只从本机进程环境读取，脚本不会将其写入配置文件。
+本地报告和证据存放在 `backend/local_research.db`，该文件已被 Git 忽略。同一组密钥对应同一个研究空间，重新输入同一组密钥可以恢复其研究记录。旧版共用报告保留在数据库中，不会自动分配给新使用者。
+
+密钥在后端使用 Fernet 加密暂存于会话表，最长有效 12 小时；页面不写入 localStorage 或 sessionStorage，Cookie 只保存随机会话标识。过期会话在访问或下次接入时清理，点击“断开服务并更换密钥”会立即删除对应会话。正在执行的任务已取得凭证，可继续完成；尚未启动的任务若会话已被清除则失败，需要重新提交。本机服务重启后需要重新输入密钥。进入工作台只检查填写格式，不验证外部服务可用性，也不发起收费请求；“开始研究”才会使用输入的密钥调用服务。网页任务不会回退到服务器环境中的提供方密钥。
 
 ## 使用 Docker 部署到服务器（可选）
 
-1. 复制 `.env.example` 为 `.env`，替换数据库密码、管理员密码、会话密钥、`DEEPSEEK_API_KEY` 和 `IFIND_MCP_API_KEY`。密钥只会被 `api` 与 `worker` 容器读取。
+1. 复制 `.env.example` 为 `.env`，替换数据库密码和 `SESSION_SECRET`。`SESSION_SECRET` 必须为至少 32 字符的高强度随机值，API 和 worker 必须一致。使用者的提供方密钥由网页单独输入，不放入部署文件。
 2. 将受信任 TLS 证书放到 `deploy/certs/fullchain.pem` 和 `deploy/certs/privkey.pem`。这两个文件已被 Git 忽略。Nginx 仅在 HTTPS 上提供应用，并将 HTTP 重定向到 HTTPS。
 3. 在安装 Docker Compose 的服务器运行：
 
@@ -26,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File .\run-local.ps1
    docker compose up --build -d
    ```
 
-4. 访问 `https://<你的域名或服务器地址>`，使用 `.env` 的管理员账户登录。
+4. 访问 `https://<你的域名或服务器地址>`，填写自己的两项密钥。给其他人使用时需要可访问的服务器地址和 HTTPS；`127.0.0.1` 只对本机有效。
 
 首次启动会自动创建数据库表。报告和原始证据快照存储在 Docker 的 `postgres_data` 卷中；请对该卷做定期、加密的异机备份。
 
@@ -35,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File .\run-local.ps1
 - 默认按最新可得财报与最近交易日数据研究；可填写历史截至日。
 - 任务为异步队列：`queued → collecting → analysing → reviewing → completed/failed`。
 - 每次生成都会形成独立版本；报告、iFinD 请求参数、响应快照哈希和采集时间都可复核。
-- iFinD 调用被限制为白名单工具，默认每秒最多 2 次；响应会缓存一小时。若账户权限不足、限流或网络失败，任务会明确失败或标出数据缺口。
+- iFinD 调用被限制为白名单工具，默认每秒最多 2 次；不同密钥之间不共享取数缓存。若账户权限不足、限流或网络失败，任务会明确失败或标出数据缺口。
 - iFinD MCP 默认直连 `api-mcp.51ifind.com:8643`，避免系统代理不支持非标准 HTTPS 端口。只有部署网络必须走代理时才设置 `IFIND_USE_ENV_PROXY=true`。
 - 公告和新闻仅使用 iFinD 语义检索返回的片段，不声称阅读了完整原始公告。
 
@@ -48,14 +50,7 @@ python -m pip install -r requirements.txt
 python -m pytest -q
 ```
 
-仅验证 DeepSeek 接入时，可在已设置 `DEEPSEEK_API_KEY` 的 PowerShell 中运行一次低用量烟雾测试：
-
-```powershell
-Set-Location backend
-..\.venv\Scripts\python.exe -c "from app.core.config import Settings; from app.services.deepseek import DeepSeekClient; c=DeepSeekClient(Settings()); print(c.create_plan('600519', None).model_dump_json()); c.close()"
-```
-
-密钥只通过环境变量读取，请勿写入代码、截图或 Git 提交。
+测试使用模拟密钥和模拟提供方，不消耗真实账户额度。不要将真实密钥写入测试代码或截图。
 
 前端在 `frontend` 目录运行：
 
@@ -67,13 +62,13 @@ npm run build
 
 前端采用浅色研究工作台布局，支持新建研究、状态筛选、任务进度、报告阅读、证据检索和 Markdown 导出。点击报告中的证据编号会打开对应的证据快照；失败任务可以回填原标的与截至日后重新提交。
 
-前端通过同源 `/api` 接口调用后端：登录后读取 `/integrations` 的密钥配置就绪状态，提交 `/researches` 创建真实任务，并定时读取任务详情展示进度、报告与证据。密钥配置状态不代表外部服务实时连通性；实际请求失败会显示在对应任务中。服务密钥保留在后端，登录过期时自动返回登录页。
+前端通过同源 `/api` 接口调用后端：`POST /session` 创建密钥会话，`GET /session` 恢复会话，`DELETE /session` 清除会话，`GET /integrations` 读取当前会话的配置状态。`POST /researches` 创建任务，后台队列只传递任务与会话标识，密钥不进入队列消息。列表、详情、证据和导出按密钥对应的研究空间隔离。会话过期时自动返回密钥输入页。
 
 开发时先在项目根目录运行 `run-local.ps1` 启动本地服务，再在另一个终端的 `frontend` 目录运行 `npm run dev`。Vite 默认只监听本机，将 `/api` 转发至 `127.0.0.1:8765`，页面修改会实时更新。通过根目录启动脚本访问 `http://127.0.0.1:8765` 则使用最新构建后的页面。
 
 ## 安全运维
 
 - 不要把 `.env`、TLS 私钥、数据库备份或 iFinD/DeepSeek 原始凭证上传到仓库。
-- 生产环境保持 `APP_ENV=production`，这样管理员会话 Cookie 必须通过 HTTPS 发送。
-- 部署前替换示例管理员密码和会话密钥，限制服务器 443 端口访问，并按服务商说明保护 iFinD 使用额度。
+- 生产环境保持 `APP_ENV=production`，会话 Cookie 只通过 HTTPS 发送。
+- 部署前替换示例会话密钥，限制服务器 443 端口访问，并按服务商说明保护使用额度。服务端会解密密钥以发起取数和模型请求，只在可信的服务实例中填写密钥。
 - 本 MVP 没有公开注册、多用户协作、PDF 导出、实时预警、港美股或网页检索；这些能力不能通过前端参数绕过。

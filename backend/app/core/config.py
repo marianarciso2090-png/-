@@ -1,6 +1,7 @@
 from functools import lru_cache
+import secrets
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,9 +11,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "sqlite:///./stock_research.db"
     redis_url: str = "redis://localhost:6379/0"
-    admin_username: str = "admin"
-    admin_password: SecretStr = Field(default=SecretStr("change-me"))
-    session_secret: SecretStr = Field(default=SecretStr("change-me"))
+    session_secret: SecretStr = Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(48)))
     deepseek_api_key: SecretStr | None = None
     ifind_mcp_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -22,6 +21,14 @@ class Settings(BaseSettings):
     ifind_max_requests_per_second: float = 2.0
     ifind_cache_ttl_seconds: int = 3600
     report_language: str = "zh-CN"
+
+    @model_validator(mode="after")
+    def require_production_secret(self):
+        if self.is_production:
+            secret = self.session_secret.get_secret_value()
+            if "session_secret" not in self.model_fields_set or len(secret) < 32 or secret.startswith("change-me"):
+                raise ValueError("生产部署必须为 API 和 worker 配置相同的高强度 SESSION_SECRET（至少 32 字符）")
+        return self
 
     @field_validator("ifind_max_requests_per_second")
     @classmethod
