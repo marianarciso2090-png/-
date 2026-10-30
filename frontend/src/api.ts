@@ -42,8 +42,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     let message = "请求失败";
     try {
-      const body = (await response.json()) as { detail?: string };
-      message = body.detail || message;
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === "string") message = body.detail;
+      else if (response.status === 422) message = "输入信息有误，请检查股票和截至日期。";
     } catch {
       // keep a safe generic error
     }
